@@ -4,13 +4,26 @@ from linebot import *
 import requests
 import pandas as pd 
 import json
+from pymessenger.bot import Bot
+
 df = pd.read_excel("tep_tepe.xlsx")
 df2 = df.set_index('คำถาม')
 json_str = df2.to_json(orient='index',force_ascii=False)
 json_data = json.loads(json_str)
 
+df3 = pd.read_excel("compare_data.xlsx")
+df4 = df3.set_index('เปรียบเทียบ')
+json_str = df4.to_json(orient='index',force_ascii=False)
+json_compare = json.loads(json_str)
+
+#LINE
 channel_secret = "92e334ef24a5aa05e9737a9ec8e082ce"
 channel_access_token = "19X1wIkhN4HKCdpWUsnfnjWDHPf6sZs5ljFKD/CbuGI7fWji1Xum7nF0Afcnmlg/cJ+EYPChYs703xRHV3dnw3OZR0jXWWp+vaIzWt4AnNz1JV2VxsaX6cWH4ophpFNuzIQoiijNcYokbTppCgq4yAdB04t89/1O/w1cDnyilFU="
+
+#Facebook
+ACCESS_TOKEN = "EAANZCjCWKluEBAJBXtTgo345UEzerwyG8uL6iTRbVL1DpCWC58EVQMltOM6RQ3Dlee5hKNrXaFrGEwyLX7r39Qy1sXpHMiU4NHFowNGMNVbxkAhImrnREijISKKqCZBowZCurc0zU6wCFx6fvg4FqPKXZCSa9VxQB95DGy3rRcsprFdZC0ImW"
+VERIFY_TOKEN = "TSEchatbot"
+bot = Bot(ACCESS_TOKEN)
 
 def callAPI():
     link = "https://{}/.json?auth={}".format(FIREBASE_HOST,FIREBASE_AUTH)
@@ -36,69 +49,56 @@ def callback():
     body = request.get_data(as_text=True)
     print(body)
     req = request.get_json(silent=True, force=True)
+    source = req['originalDetectIntentRequest']["source"]
+    print(source)
     intent = req["queryResult"]["intent"]["displayName"]
     text = req['originalDetectIntentRequest']['payload']['data']['message']['text']
-    reply_token = req['originalDetectIntentRequest']['payload']['data']['replyToken']
-    id = req['originalDetectIntentRequest']['payload']['data']['source']['userId']
-    disname = line_bot_api.get_profile(id).display_name
-    if (intent == "locationAndOption"):
-        response = callAPI()
-        msg = ""
-        location = req["queryResult"]['parameters']["location"]
-        option = req["queryResult"]['parameters']["option"]
-        province = req["queryResult"]['parameters']["province"]
-    
-        for p in province:
-            msgL = "{} \n\n".format(p)
-            for l in location:
-                msgL +="{} \n".format(l)
-                for o in option:
-                    msgL+="{} = {} \n".format(o ,getValue(l,p,o,response))
-            msg+= msgL+"\n"
-                
-        
+    if source == "line":
+        reply_token = req['originalDetectIntentRequest']['payload']['data']['replyToken']
+        id = req['originalDetectIntentRequest']['payload']['data']['source']['userId']
+        disname = line_bot_api.get_profile(id).display_name
+    elif source =="facebook":
+        reply_token = req['originalDetectIntentRequest']['payload']['data']["sender"]['id']
+        print(reply_token)
     
 
+    if intent == "register":
+        question = req["queryResult"]['parameters']["question"][0]
+        major_list = []
+        msg_dup = []
+        for i in req["queryResult"]['parameters']["major"]:
+            major_list.append(i.upper())
+        msg_list = ''
+        print(req["queryResult"]['parameters']["major"])
+        for i in major_list:
+            if json_data[question][i] not in msg_dup:
+                msg_list += json_data[question][i]
+                msg_dup.append(json_data[question][i])
+                msg_list += "\n"
+        reply(intent,text,reply_token,msg_list,source)
 
-        reply(intent,text,reply_token,id,disname,msg)
-    elif intent == "optionSecond":
-        location = req["queryResult"]['outputContexts'][0]['parameters']["location"]
-        option = req["queryResult"]['outputContexts'][0]['parameters']["option"]
-        reply_cloud(intent,text,reply_token,id,disname,location,option)
-    elif intent == "locationSecond":
-        location = req["queryResult"]['outputContexts'][0]['parameters']["location"]
-        option = req["queryResult"]['outputContexts'][0]['parameters']["option"]
-        reply_cloud(intent,text,reply_token,id,disname,location,option)
-    elif intent == "register":
-        msg = json_data['รับกี่คน']['TEP']
-        reply(intent,text,reply_token,id,disname,msg)
-    
+    elif intent == "TCAS1.2":
+        question = req["queryResult"]['parameters']["question"][0]
+        major = req["queryResult"]['parameters']["major"][0]
+        msg = json_data[question][major]
+        reply(intent,text,reply_token,msg,source)
 
 
-    
-    else:
-        try:
-            location = req["queryResult"]['outputContexts'][0]['parameters']["location"]
-            option = req["queryResult"]['outputContexts'][0]['parameters']["option"]
-        except:
-            location = ""
-            option = ""
-            room = ""
-    print(body)
-    print('id = ' + id)
-    print('name = ' + disname)
-    print('text = ' + text)
-    print('intent = ' + intent)
-    print('reply_token = ' + reply_token)
-    print('location = '+location)
-    #print('option = '+option)
-
+    elif intent == "compare":
+        major = req["queryResult"]['parameters']["major"][0].upper()
+        major1 = req["queryResult"]['parameters']["major1"][0].upper()
+        msg = json_compare[major][major1]
+        reply(intent,text,reply_token,msg,source)
     
 
 
-def reply(intent,text,reply_token,id,disname,msg):
+def reply(intent,text,reply_token,msg,source):
     text_message = TextSendMessage(text=msg)
-    line_bot_api.reply_message(reply_token,text_message)
+    if source == "line":
+        line_bot_api.reply_message(reply_token,text_message)
+    else:
+        bot.send_text_message(reply_token, msg)
+        
 
 def reply_en(intent,text,reply_token,id,disname,location,room):
     text_message = TextSendMessage(text=data[location][option])
